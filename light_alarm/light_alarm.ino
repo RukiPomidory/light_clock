@@ -55,6 +55,9 @@ CRGB led[LED_COUNT];
 // OLED Дисплей 128x64
 Adafruit_SSD1306 display(OLED_RESET);
 
+// Состояние системы
+State state;
+
 // Координаты мигающих точек
 const int blinkX = 92;
 const int blinkY = 0;
@@ -86,7 +89,7 @@ byte window;
 bool timeChanging = false;
 
 // Какой сектор времени изменяется
-byte sector;
+byte timeSector;
 // 0 - день
 // 1 - месяц
 // 2 - год
@@ -96,8 +99,27 @@ byte sector;
 // Счетчик кликов
 int counter;
 
-// Текущее время в минутах
-int currentTime;
+
+/*
+ *  Массив с данными о дате и времени
+ */
+int dataTime[5];
+// 0 - день
+// 1 - месяц
+// 2 - год
+// 3 - часы
+// 4 - минуты
+
+// Переводит число в строку длиной не менее 2 символов
+String to2d(int digit)
+{
+    if (digit < 10)
+    {
+        return "0" + String(digit);
+    }
+    
+    return String(digit);
+}
 
 // Установка одного цвета на всю ленту
 void setColor(int red, int green, int blue)
@@ -222,7 +244,13 @@ void selectOption()
         switch(window)
         {
             case 1:
-                if (5 == counter)
+                if (timeChanging)
+                {
+                    timeChanging = false;
+                    counter = timeSector;
+                    displaySetTime();
+                }
+                else if (5 == counter)
                 {
                     window = 0;
                     displaySettings();
@@ -231,6 +259,8 @@ void selectOption()
                 {
                     timeChanging = true;
                     timeSector = (byte) counter;
+                    counter = dataTime[timeSector];
+                    displaySetTime();
                 }
                 break;
                 
@@ -251,17 +281,27 @@ void displayMain()
     display.setTextSize(1);
     display.setTextColor(WHITE);
     display.setCursor(0, 0);
-    display.print("26.04.19");
+    String date = to2d(dataTime[0]) + '.' +
+                to2d(dataTime[1]) + '.' +
+                to2d(dataTime[2]);
+    display.print(date);
 
     display.setCursor(83, 18);
-    display.print("06:10");
+    int minute = state.alarmMin % 60;
+    int hour = state.alarmMin / 60;
+    String alarmTime = to2d(minute) + ':' +
+                to2d(hour);
+    display.print(alarmTime);
+    
 
     display.setCursor(18, 14);
     display.print("ASlab");
 
     display.setTextSize(2);
     display.setCursor(68, 0);
-    display.print("23:41");
+    String time = to2d(dataTime[3]) + ':' +
+                to2d(dataTime[4]);
+    display.print(time);
 
     unsigned long start = millis();
     display.display();
@@ -302,40 +342,78 @@ void displaySettings()
 
 
 void displaySetTime()
-{
-    counter = (6 + counter) % 6;
-    D("t ");
-
+{   
     display.clearDisplay();
     
+    if (timeChanging)
+    {
+        display.setTextSize(1);
+        display.setTextColor(WHITE);
+        display.setCursor(110, 4);
+        display.print("</>");
+        
+        int limit = 6;
+        
+        switch(timeSector)
+        {
+            // День
+            // TODO: Зависимость дня от месяца
+            case 0:
+                limit = 32;
+                break;
+
+            // Месяц
+            case 1:
+                limit = 13;
+                break;
+
+            // Год
+            case 2:
+                limit = 100;
+                break;
+
+            // Часы
+            case 3:
+                limit = 24;
+                break;
+                
+            // Минуты
+            case 4:
+                limit = 60;
+                break;            
+        }
+
+        counter = (limit + counter) % limit;
+    }
+    else
+    {
+        counter = (6 + counter) % 6;
+        D("t ");
+
+        timeSector = counter;
+    }
+    
+    
     display.setTextSize(2);
-    display.setTextColor(WHITE);
     display.setCursor(0, 0);
 
-    int data[5] = {26, 04, 19, 23, 41};
-
-    for (int i = 0; i < sizeof(data) / sizeof(data[0]); i++)
+    for (int i = 0; i < sizeof(dataTime) / sizeof(dataTime[0]); i++)
     {
-        String value;
-        if (data[i] < 10)
-        {
-            value = "0" + String(data[i]);
-        }
-        else
-        {
-            value = String(data[i]);
-        }
-
-        if (i == counter)
+        if (i == timeSector)
         {
             display.setTextColor(BLACK, WHITE);
+            
+            if (timeChanging)
+            {
+                dataTime[i] = counter;
+            }
         }
         else
         {
             display.setTextColor(WHITE);
         }
-        
-        display.print(value);
+
+        display.print(to2d(dataTime[i]));
         
         if (2 == i || 4 == i)
         {
@@ -355,7 +433,7 @@ void displaySetTime()
         }
     }
 
-    if (5 == counter)
+    if (5 == timeSector)
     {
         display.setTextColor(BLACK, WHITE);
     }
@@ -378,6 +456,17 @@ void displaySetAlarm()
     
 } // void displaySetAlarm()
 
+void initDataTime()
+{
+    dataTime[0] = 27;
+    dataTime[1] = 04; 
+    dataTime[2] = 19;
+    dataTime[3] = 2;
+    dataTime[4] = 15;
+    
+    // TODO: запрос RTC
+}
+
 void setup() 
 {
     D_INIT();
@@ -395,6 +484,7 @@ void setup()
     //check();
     prevSW = digitalRead(ENCODER_SW);
     window = 0;
+    initDataTime();
     
     displayMain();
 } // void setup()
