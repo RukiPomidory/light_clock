@@ -60,12 +60,14 @@ const int blinkX = 92;
 const int blinkY = 0;
 
 
-
 // Надо ли мигать двоеточием
 bool isBlinking = true;
 
 // Итерация мигания
 bool blinkIteration = true;
+
+// Находится ли юзверь в настройках
+bool settings = false;
 
 // Значение для сравнения (энкодер)
 bool prevClk;
@@ -161,7 +163,7 @@ void selectOption()
 } // void selectOption()
 
 
-void displayAll()
+void displayMain()
 {
     display.clearDisplay();
     
@@ -201,8 +203,6 @@ void blink()
     display.display();
     
     blinkIteration = !blinkIteration;
-
-    
 } // void blink()
 
 void setup() 
@@ -220,8 +220,7 @@ void setup()
     //EEPROM.get(State, 0);
 
     //check();
-    displayAll();
-    delay(2000);
+    displayMain();
 } // void setup()
 
 void loop()
@@ -237,8 +236,6 @@ void loop()
         selectOption();
     }
 
-    blink();
-    delay(1000);
 }
 
 
