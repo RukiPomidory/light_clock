@@ -1,3 +1,11 @@
+/*
+Copyright (c) 2019 Arseniy Molodtsov
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License.
+
+Version 0.6
+(27.04.2019)
+*/
+
 #include <iarduino_RTC.h>
 #include <EEPROM.h>
 #include <FastLED.h>
@@ -20,16 +28,17 @@
 #endif  // #ifdef  DEBUG
 
 // Состояние системы. Сохраняем его в долговременную память EEPROM
-struct State
+class State
 {
-    // Время будильника, переведнное в минуты
-    int alarmMin;
-    
-    // В какие дни включать
-    byte days;
-    
-    // Установлен ли будильник
-    bool enabled;
+    public:
+        // Время будильника, переведнное в минуты
+        int alarmMin;
+        
+        // В какие дни включать
+        byte days;
+        
+        // Заведен ли будильник
+        bool enabled;
 };
 
 
@@ -63,11 +72,11 @@ const int blinkX = 92;
 const int blinkY = 0;
 
 
-// Надо ли мигать двоеточием
-bool isBlinking = true;
-
-// Итерация мигания
-bool blinkIteration = true;
+//// Надо ли мигать двоеточием
+//bool isBlinking = true;
+//
+//// Итерация мигания
+//bool blinkIteration = true;
 
 // Находится ли юзверь в настройках
 bool settings = false;
@@ -95,6 +104,17 @@ byte timeSector;
 // 2 - год
 // 3 - минуты
 // 4 - часы
+
+
+// Изменяется ли время будильника
+bool alarmChanging = false;
+
+// Какой сектор будильника меняется
+byte alarmSector;
+// 0 - часы
+// 1 - минуты
+// 2 - вкл/выкл
+
 
 // Счетчик кликов
 int counter;
@@ -219,6 +239,8 @@ void selectOption()
     {
         switch(counter)
         {
+            counter = 0;
+            
             case 0:
                 D_LN("wanna set time");
                 displaySetTime();
@@ -263,6 +285,44 @@ void selectOption()
                     displaySetTime();
                 }
                 break;
+
+            case 2:
+                if (alarmChanging)
+                {
+                    alarmChanging = false;
+                    counter = alarmSector;
+                    displaySetAlarm();
+                }
+                else if (3 == counter)
+                {
+                    window = 0;
+                    counter = 2; // 2 - это id кнопки выхода
+                    displaySettings();
+                }
+                else
+                {
+                    alarmChanging = true;
+                    alarmSector = (byte) counter;
+                    switch(alarmSector)
+                    {
+                        // Часы
+                        case 0:
+                            counter = state.alarmMin / 60;
+                            break;
+
+                        // Минуты
+                        case 1:
+                            counter = state.alarmMin % 60;
+                            break;
+
+                        // Вкл/выкл
+                        case 2:
+                            counter = state.enabled;
+                            break;
+                    }
+                    displaySetAlarm();
+                }
+                break;
                 
             default:
                 D(window);
@@ -289,13 +349,16 @@ void displayMain()
     display.setCursor(83, 18);
     int minute = state.alarmMin % 60;
     int hour = state.alarmMin / 60;
-    String alarmTime = to2d(minute) + ':' +
-                to2d(hour);
+    String alarmTime = to2d(hour) + ':' +
+                to2d(minute);
     display.print(alarmTime);
     
 
-    display.setCursor(18, 14);
-    display.print("ASlab");
+//    display.setCursor(0, 16);
+//    display.setTextColor(BLACK, WHITE);
+//    display.print("MTW");
+//    display.setTextColor(WHITE);
+//    display.print("TFSS");
 
     display.setTextSize(2);
     display.setCursor(68, 0);
@@ -309,6 +372,7 @@ void displayMain()
     unsigned long lapsed = millis() - start;
     D_LN(lapsed);
 } // void displayAll()
+
 
 void displaySettings()
 {
@@ -338,6 +402,7 @@ void displaySettings()
     display.print("exit");
     
     display.display();
+    
 } // void displaySettings()
 
 
@@ -453,8 +518,104 @@ void displaySetTime()
 
 void displaySetAlarm()
 {
+    display.clearDisplay();
+
+    if (alarmChanging)
+    {
+        display.setTextSize(1);
+        display.setTextColor(WHITE);
+        display.setCursor(110, 4);
+        display.print("</>");
+
+        int limit = 4;
+
+        switch(alarmSector)
+        {
+            // Часы
+            case 0:
+                limit = 24;
+                break;
+            
+            // Минуты
+            case 1:
+                limit = 60;
+                break;
+
+            // Вкл/выкл
+            case 2:
+                limit = 2;
+                break;    
+        }
+
+        counter = (limit + counter) % limit;
+    }
+    else
+    {
+        counter = (4 + counter) % 4;
+        D("a ");
+
+        alarmSector = counter;
+    }
+
+    display.setTextSize(2);
+    display.setCursor(0, 0);
+    display.setTextColor(WHITE);
+    
+    // Вытаскиваем двух зайцев из одной шляпы
+    int minute = state.alarmMin % 60;
+    int hour = state.alarmMin / 60;
+
+    // Инверсия цвета, если нулевой сектор
+    if (0 == alarmSector) 
+    {
+        display.setTextColor(BLACK, WHITE);
+        
+        if (alarmChanging)
+        {
+            hour = counter;
+            state.alarmMin = hour * 60 + minute;
+        }
+    }
+
+    // Вывод на дисплей, с предварительным форматированием под 2 цифры
+    display.print(to2d(hour));
+    
+    display.setTextColor(WHITE);
+    display.print(":");
+
+    // Аналогично первый
+    if (1 == alarmSector) 
+    {
+        display.setTextColor(BLACK, WHITE);
+
+        if (alarmChanging)
+        {
+            minute = counter;
+            state.alarmMin = hour * 60 + minute;
+        }
+    }
+    
+    display.print(to2d(minute));
+
+    // Второй
+    if (2 == alarmSector) display.setTextColor(BLACK, WHITE);
+    else    display.setTextColor(WHITE);
+
+    display.setTextSize(1);
+    display.setCursor(10, 16);
+    display.print("enabled");
+
+    // Наконец, третий
+    if (3 == alarmSector) display.setTextColor(BLACK, WHITE);
+    else    display.setTextColor(WHITE);
+
+    display.setCursor(80, 18);
+    display.print(" exit ");
+    
+    display.display();
     
 } // void displaySetAlarm()
+
 
 void initDataTime()
 {
@@ -465,7 +626,8 @@ void initDataTime()
     dataTime[4] = 15;
     
     // TODO: запрос RTC
-}
+    
+} // void initDataTime()
 
 void setup() 
 {
@@ -505,6 +667,6 @@ void loop()
 
     prevSW = encoderSW;
     delay(1);
-}
+} // void loop()
 
 
