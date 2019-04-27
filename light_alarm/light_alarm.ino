@@ -43,7 +43,7 @@ class State
 
 
 #define LED_COUNT 60    // Количество светодиодов в ленте
-#define LED_PIN 13      // Пин, к которому подключена лента
+#define LED_PIN 4      // Пин, к которому подключена лента
 
 #define FIRST_OFF 2     // Первая кнопка выключения
 #define SECOND_OFF 3    // Вторая кнопка выключения
@@ -56,7 +56,7 @@ class State
 
 
 // Часы реального времени
-iarduino_RTC rtc(RTC_DS1302, 8, 9, 10);
+iarduino_RTC rtc(RTC_DS1302, 7, 8, 9);
 
 // Светодиодная лента
 CRGB led[LED_COUNT];
@@ -67,17 +67,6 @@ Adafruit_SSD1306 display(OLED_RESET);
 // Состояние системы
 State state;
 
-// Координаты мигающих точек
-const int blinkX = 92;
-const int blinkY = 0;
-
-
-//// Надо ли мигать двоеточием
-//bool isBlinking = true;
-//
-//// Итерация мигания
-//bool blinkIteration = true;
-
 // Находится ли юзверь в настройках
 bool settings = false;
 
@@ -86,6 +75,8 @@ bool prevClk;
 
 // Предыдущее показание кнопки энкодера
 bool prevSW;
+
+
 
 // Номер текущего окна настроек
 byte window;
@@ -115,10 +106,14 @@ byte alarmSector;
 // 1 - минуты
 // 2 - вкл/выкл
 
+// Последняя установленная яркость ленты
+int prevBrightness = 0;
 
 // Счетчик кликов
 int counter;
 
+// Контроль времени опроса rtc модуля
+unsigned long startGlobal;
 
 /*
  *  Массив с данными о дате и времени
@@ -152,7 +147,7 @@ void setColor(int red, int green, int blue)
 }
 
 // Проверка работоспособности ленты
-void check()
+void ledTest()
 {
     setColor(255, 0, 0);
     delay(300);
@@ -163,7 +158,8 @@ void check()
     setColor(0, 0, 255);
     delay(300);
 
-    setColor(0, 0, 0);
+    FastLED.setBrightness(0);
+    setColor(255, 255, 255);
 }
 
 void checkEncoder()
@@ -270,6 +266,7 @@ void selectOption()
                 {
                     timeChanging = false;
                     counter = timeSector;
+                    rtc.settime(-1, dataTime[4], dataTime[3], dataTime[0], dataTime[1], dataTime[2]);
                     displaySetTime();
                 }
                 else if (5 == counter)
@@ -291,6 +288,7 @@ void selectOption()
                 {
                     alarmChanging = false;
                     counter = alarmSector;
+                    EEPROM.put(0, state);
                     displaySetAlarm();
                 }
                 else if (3 == counter)
@@ -317,7 +315,8 @@ void selectOption()
 
                         // Вкл/выкл
                         case 2:
-                            counter = state.enabled;
+                            state.enabled = !state.enabled;
+                            alarmChanging = false;
                             break;
                     }
                     displaySetAlarm();
@@ -603,7 +602,15 @@ void displaySetAlarm()
 
     display.setTextSize(1);
     display.setCursor(10, 16);
-    display.print("enabled");
+    if (state.enabled)
+    {
+        display.print(" enabled ");
+    }
+    else
+    {
+        display.print(" disabled ");
+    }
+    
 
     // Наконец, третий
     if (3 == alarmSector) display.setTextColor(BLACK, WHITE);
@@ -619,13 +626,13 @@ void displaySetAlarm()
 
 void initDataTime()
 {
-    dataTime[0] = 27;
-    dataTime[1] = 04; 
-    dataTime[2] = 19;
-    dataTime[3] = 2;
-    dataTime[4] = 15;
+    rtc.gettime();
+    dataTime[0] = rtc.day;
+    dataTime[1] = rtc.month; 
+    dataTime[2] = rtc.year;
+    dataTime[3] = rtc.Hours;
+    dataTime[4] = rtc.minutes;
     
-    // TODO: запрос RTC
     
 } // void initDataTime()
 
@@ -641,12 +648,14 @@ void setup()
     display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
 
     FastLED.addLeds<WS2812B, LED_PIN, GRB>(led, LED_COUNT);
-    //EEPROM.get(State, 0);
+    EEPROM.get(0, state);
 
-    //check();
+    ledTest();
     prevSW = digitalRead(ENCODER_SW);
     window = 0;
+    startGlobal = millis();
     initDataTime();
+    state.enabled = true;
     
     displayMain();
 } // void setup()
@@ -664,6 +673,27 @@ void loop()
         // Обработка выбранной опции
         selectOption();
     }
+
+    int currentTimeMin = dataTime[3] * 60 + dataTime[4];
+
+    int delta = ((1440 + state.alarmMin - currentTimeMin) % 1440) / 60.0 * 255;
+    
+    int brightness = 255 - delta;
+    brightness = max(0, brightness);
+
+    if (brightness != prevBrightness)
+    {
+        FastLED.setBrightness(brightness);
+        FastLED.show();
+        prevBrightness = brightness;
+    }
+
+    if (millis() - startGlobal > 5000)
+    {
+        initDataTime();
+        startGlobal = millis();
+    }
+    
 
     prevSW = encoderSW;
     delay(1);
